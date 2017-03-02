@@ -1,5 +1,7 @@
 FROM nginx
 
+LABEL maintainer "Ievgen Khmelenko <ujenmr@gmail.com>"
+
 ENV SERVICE_NAME "nginx-service"
 ENV SERVICE_CHECK_TCP "true"
 ENV SERVICE_CHECK_INTERVAL "15s"
