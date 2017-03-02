@@ -1,0 +1,110 @@
+user                        www-data;
+worker_processes            auto;
+
+error_log                   /var/log/nginx/error.log warn;
+pid                         /var/run/nginx.pid;
+
+events {
+    worker_connections      1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  json  '{"timestamp":"$time_local",'
+                      '"nginx_type":"nginx-service",'
+                      '"request_id":"$http_x_request_id",'
+                      '"verb":"$request_method",'
+                      '"request":"$request_uri",'
+                      '"response":"$status",'
+                      '"request_time":"$request_time"}';
+
+    access_log  /var/log/nginx/access.json json;
+
+    sendfile                on;
+    tcp_nopush              on;
+    keepalive_timeout       90;
+
+    gzip                    on;
+    gzip_min_length         1100;
+    gzip_buffers            4 8k;
+    gzip_types              text/plain text/css application/json application/javascript;
+
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 4k;
+    server_names_hash_bucket_size 128;
+
+    client_header_timeout   3m;
+    client_body_timeout     3m;
+    send_timeout            3m;
+
+    server_tokens           off;
+
+    set_real_ip_from        172.17.0.0/16;
+    set_real_ip_from        172.16.0.0/16;
+    set_real_ip_from        10.0.0.0/8;
+    set_real_ip_from        192.168.0.0/16;
+    set_real_ip_from        127.0.0.0/8;
+
+    real_ip_recursive       on;
+    real_ip_header          X-Forwarded-For;
+
+
+{{ $currentNode  := env "NODE"}}
+{{- range services }}
+  {{- $serviceName := .Name }}
+  {{- $service := service .Name }}
+  {{- range $tag, $services := service $serviceName | byTag }}
+    {{- if $tag | regexMatch "contextPath=" }}
+      {{- $serviceLocation := index ($tag | split "=") 1 }}
+    # Service: {{ $serviceName }}
+    # Location: {{ $serviceLocation }}
+    # Alive Services: {{ (len $service) }}
+    upstream {{ $serviceName }} {
+        zone upstream-{{ $serviceName }} 64k;
+      {{- range $service }}
+        server {{ .NodeAddress }}:{{ .Port }} max_fails=3 fail_timeout=5 weight=1{{if ne $currentNode .Node }}{{ if gt (len $service) 1 }} backup{{end}}{{end}};
+      {{- else }}
+        server 127.0.0.1:65535; # force a 502
+      {{- end }}
+    }
+    {{- end }}
+  {{- end }}
+{{ end }}
+
+    server {
+        listen                  0.0.0.0:80;
+
+        keepalive_timeout       10;
+
+{{ $currentGroup  := env "SERVICE_TAGS" }}
+{{- range services }}
+  {{- $serviceName := .Name }}
+  {{- range $tag, $services := service $serviceName | byTag }}
+    {{- if $tag | regexMatch "contextPath=" }}
+      {{- $serviceLocation := index ($tag | split "=") 1 }}
+        # Service: {{ $serviceName }}
+        # Location: {{ $serviceLocation }}
+        location {{ $serviceLocation }} {
+            proxy_pass          http://{{ $serviceName }};
+            proxy_set_header    Host             $host;
+            proxy_set_header    X-Real-IP        $remote_addr;
+            proxy_set_header    X-Forwarded-For  $proxy_add_x_forwarded_for;
+            proxy_set_header    X-Scheme         $http_x_scheme;
+            proxy_set_header    X-Request-Id     $request_id;
+        }
+    {{ end }}
+  {{ end }}
+{{ end }}
+
+        location = /nginx_status {
+            stub_status on;
+            allow 127.0.0.1;
+            allow 172.17.0.0/16;
+            deny all;
+            access_log off;
+        }
+    }
+}
+
