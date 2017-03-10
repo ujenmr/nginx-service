@@ -5,8 +5,9 @@ LABEL maintainer "Ievgen Khmelenko <ujenmr@gmail.com>"
 ENV SERVICE_NAME "nginx-service"
 ENV SERVICE_CHECK_TCP "true"
 ENV SERVICE_CHECK_INTERVAL "15s"
+ENV SERVICE_TAGS "master,system"
 
-ENV CONSUL_TEMPLATE_VERSION=0.16.0
+ENV CONSUL_TEMPLATE_VERSION=0.18.1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends unzip curl && \
